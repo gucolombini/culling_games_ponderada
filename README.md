@@ -12,11 +12,19 @@ source install/setup.bash
 ros2 run map_solver complete_map_solver
 ```
 
+## Mapeamento em tempo real por DFS (busca por profundidade) e BFS para backtracking
+```bash
+source install/setup.bash
+ros2 run map_solver mapper_solver
+```
+#### Versão com estatísticas de precisão (faz uso do serviço /get_map para validar o mapeamento):
+```bash
+source install/setup.bash
+ros2 run map_solver mapper_solver_stats
+```
+
 ## Movimentação sem lógica (randomizada)
 ```bash
 source install/setup.bash
 ros2 run map_solver lobotomy_solver
 ```
-
-## Mapeamento em tempo real por DFS (busca por profundidade)
-WIP
