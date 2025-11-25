@@ -4,7 +4,7 @@ No repositório [culling_games](https://github.com/rmnicola/culling_games), dent
 colcon build --packages-select map_solver
 ```
 
-Após o processo finalizar com sucesso, inicie o labirinto e em outro terminal execute os seguintes comandos para iniciar os algoritmos de resolvimento do mapa:
+Após o processo finalizar com sucesso, inicie o labirinto e em outro terminal execute os seguintes comandos para iniciar os algoritmos de resolvimento do mapa (Uma conexão estável é necessária para garantir a execução do programa sem erros!):
 
 ## Caminho mais curto por BFS (busca por largura)
 ```bash
