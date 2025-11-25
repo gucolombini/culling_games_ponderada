@@ -15,11 +15,14 @@ add_executable(lobotomy_solver src/lobotomy_solver.cpp)
 ament_target_dependencies(lobotomy_solver rclcpp cg_interfaces)
 add_executable(mapper_solver src/mapper_solver.cpp)
 ament_target_dependencies(mapper_solver rclcpp cg_interfaces)
+add_executable(mapper_solver_stats src/mapper_solver_stats.cpp)
+ament_target_dependencies(mapper_solver_stats rclcpp cg_interfaces)
 
 install(TARGETS 
   complete_map_solver
   lobotomy_solver
   mapper_solver
+  mapper_solver_stats
   DESTINATION lib/${PROJECT_NAME})
 # uncomment the following section in order to fill in
 # further dependencies manually.
