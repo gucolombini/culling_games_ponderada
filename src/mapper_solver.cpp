@@ -7,7 +7,6 @@
 #include <algorithm>
 
 #include "rclcpp/rclcpp.hpp"
-#include "cg_interfaces/srv/get_map.hpp"
 #include "cg_interfaces/srv/move_cmd.hpp"
 #include "cg_interfaces/msg/robot_sensors.hpp"
 
