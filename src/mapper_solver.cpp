@@ -164,7 +164,7 @@ public:
         
         sub_ = this->create_subscription<cg_interfaces::msg::RobotSensors>(
             "/culling_games/robot_sensors",
-            10,
+            rclcpp::SensorDataQoS(),
             std::bind(&RobotController::callback, this, _1)
         );
 
