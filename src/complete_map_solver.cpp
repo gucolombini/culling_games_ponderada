@@ -124,9 +124,6 @@ std::pair<int,int> send_move(
     }
 
     auto result = future.get();
-
-    // RCLCPP_INFO(node->get_logger(), "Move '%s' executed.", dir.c_str());
-
     return { result->robot_pos[0], result->robot_pos[1] };
 }
 
@@ -153,18 +150,12 @@ public:
     /*Função de movimento principal do robô.
     Retorna true se o movimento teve sucesso, e false caso contrário.
     Atualiza a posição do robô automaticamente*/
-    bool move_logic(
-        rclcpp::Node::SharedPtr node,
-        rclcpp::Client<cg_interfaces::srv::MoveCmd>::SharedPtr move_client,
-        Position &robot,
-        std::vector<std::vector<char>> &known_map,
-        std::string dir)
-    {
-        auto [new_r, new_c] = send_move(node, move_client, dir); 
+    bool move_logic(std::string dir)
+        {auto [new_r, new_c] = send_move(main_node_, move_client_, dir); 
         if (new_r == -1) { 
-            RCLCPP_WARN(node->get_logger(), "Move failed"); return false; 
+            RCLCPP_WARN(main_node_->get_logger(), "Move failed"); return false; 
         } 
-        robot.r = new_r; robot.c = new_c; 
+        robot_.r = new_r; robot_.c = new_c; 
         return true;
     }
 
@@ -176,10 +167,10 @@ public:
         }
         for (int n = 0; n < int(path.size());) {
             bool success = false;
-            if (path[n].r == robot_.r - 1) {success = move_logic(main_node_, move_client_, robot_, known_map_, "up");}
-            else if (path[n].r == robot_.r + 1) {success = move_logic(main_node_, move_client_, robot_, known_map_, "down");}
-            else if (path[n].c == robot_.c - 1) {success = move_logic(main_node_, move_client_, robot_, known_map_, "left");}
-            else if (path[n].c == robot_.c + 1) {success = move_logic(main_node_, move_client_, robot_, known_map_, "right");}
+            if (path[n].r == robot_.r - 1) {success = move_logic("up");}
+            else if (path[n].r == robot_.r + 1) {success = move_logic("down");}
+            else if (path[n].c == robot_.c - 1) {success = move_logic("left");}
+            else if (path[n].c == robot_.c + 1) {success = move_logic("right");}
             else if (path[n] == robot_) {success = true;}
             else {
                 std::cout << "Caminho inválido";
@@ -187,6 +178,7 @@ public:
             if (success) {
                 ++n;
             }
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
         }
         return true;
     }
@@ -205,9 +197,9 @@ public:
             std::cout << ", ";
             std::cout << shortest_path[i].c;
         }
+        std::cout << "\n";
 
         follow_path(shortest_path);
-        rclcpp::shutdown();
         return;
     }
 
@@ -291,7 +283,6 @@ int main(int argc, char **argv)
         robot,
         map
     );
-    rclcpp::spin(controller);
-    rclcpp::shutdown();
+
     return 0;
 }

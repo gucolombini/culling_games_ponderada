@@ -5,6 +5,7 @@
 #include <stack>
 #include <vector>
 #include <algorithm>
+#include <chrono>
 
 #include "rclcpp/rclcpp.hpp"
 #include "cg_interfaces/srv/get_map.hpp"
@@ -125,9 +126,6 @@ std::pair<int,int> send_move(
     }
 
     auto result = future.get();
-
-    // RCLCPP_INFO(node->get_logger(), "Move '%s' executed.", dir.c_str());
-
     return { result->robot_pos[0], result->robot_pos[1] };
 }
 
@@ -136,10 +134,13 @@ Com essa implementação eu não preciso me preocupar do robô se perder no mapa
 class RobotController : public rclcpp::Node
 {
 public:
-    std::stack<Position> DFS_stack;
+    std::stack<Position> movement_stack;
     std::vector<std::vector<bool>> discovered_map;
     bool is_searching = true;
     bool finished = false;
+    bool received_first_msg = false;
+    cg_interfaces::msg::RobotSensors last_msg;
+
     Position target = {-1,-1};
     RobotController(
         rclcpp::Node::SharedPtr main_node,
@@ -167,57 +168,60 @@ public:
             10,
             std::bind(&RobotController::callback, this, _1)
         );
+
+        // Executa função do loop principal em outro thread para não afetar o recebimento de mensagens
+        // Eu acho que deixei tudo bem seguro, quando o controller for apagado esse loop já irá ter parado
+        std::thread t(&RobotController::main_loop, this);
+        t.detach();
+
     }
 
     /* Atualiza o mapa de acordo com a mensagem recebida.
     Não faz checagem de bounds do mapa porque sempre há uma borda.
     Não bote mapa sem borda por favor Nicola vai explodir tudo*/
-    void update_map(const cg_interfaces::msg::RobotSensors &msg, Position robot, std::vector<std::vector<char>> &known_map) {
-        known_map[robot.r-1][robot.c-1] = msg.up_left[0];
-        known_map[robot.r-1][robot.c] = msg.up[0];
-        known_map[robot.r-1][robot.c+1] = msg.up_right[0];
-        known_map[robot.r][robot.c-1] = msg.left[0];
-        known_map[robot.r][robot.c] = 'f';
-        known_map[robot.r][robot.c+1] = msg.right[0];
-        known_map[robot.r+1][robot.c-1] = msg.down_left[0];
-        known_map[robot.r+1][robot.c] = msg.down[0];
-        known_map[robot.r+1][robot.c+1] = msg.down_right[0];
+    void update_map() {
+        known_map_[robot_.r-1][robot_.c-1] = last_msg.up_left[0];
+        known_map_[robot_.r-1][robot_.c] = last_msg.up[0];
+        known_map_[robot_.r-1][robot_.c+1] = last_msg.up_right[0];
+        known_map_[robot_.r][robot_.c-1] = last_msg.left[0];
+        known_map_[robot_.r][robot_.c] = 'R';
+        known_map_[robot_.r][robot_.c+1] = last_msg.right[0];
+        known_map_[robot_.r+1][robot_.c-1] = last_msg.down_left[0];
+        known_map_[robot_.r+1][robot_.c] = last_msg.down[0];
+        known_map_[robot_.r+1][robot_.c+1] = last_msg.down_right[0];
         std::cout << "UPDATED MAP\n";
-        print_map(known_map);
+        print_map(known_map_);
+        known_map_[robot_.r][robot_.c] = 'f';
     }
 
     /* Atualiza o stack do DFS com os quadrados adjacentes ao robô */
-    void update_DFS(Position robot, std::vector<std::vector<char>> &known_map) {
-        push_DFS(Position {r:robot.r-1, c:robot.c  }, known_map); //up
-        push_DFS(Position {r:robot.r  , c:robot.c-1}, known_map); //left
-        push_DFS(Position {r:robot.r  , c:robot.c+1}, known_map); //right
-        push_DFS(Position {r:robot.r+1, c:robot.c  }, known_map); //down
+    void update_DFS() {
+        push_DFS(Position {r:robot_.r-1, c:robot_.c  });
+        push_DFS(Position {r:robot_.r+1, c:robot_.c  });
+        push_DFS(Position {r:robot_.r  , c:robot_.c-1});
+        push_DFS(Position {r:robot_.r  , c:robot_.c+1});
     }
 
     /* Valida se o quadrante já foi descoberto
     Se não, adiciona ao stack 
     Se sim, ignora.*/
-    void push_DFS(Position pos, std::vector<std::vector<char>> &known_map) {
+    void push_DFS(Position pos) {
         if (discovered_map[pos.r][pos.c]) return;
-        discovered_map[pos.r][pos.c] = true;
-        if (known_map[pos.r][pos.c] == 'f') DFS_stack.push(pos);
+        if (known_map_[pos.r][pos.c] == 'f') {
+            discovered_map[pos.r][pos.c] = true;
+            movement_stack.push(pos);
+        }
     }
 
     /*Função de movimento principal do robô.
     Retorna true se o movimento teve sucesso, e false caso contrário.
     Atualiza a posição do robô automaticamente*/
-    bool move_logic(
-        rclcpp::Node::SharedPtr node,
-        rclcpp::Client<cg_interfaces::srv::MoveCmd>::SharedPtr move_client,
-        Position &robot,
-        std::vector<std::vector<char>> &known_map,
-        std::string dir)
-    {
-        auto [new_r, new_c] = send_move(node, move_client, dir); 
+    bool move_logic(std::string dir){
+        auto [new_r, new_c] = send_move(main_node_, move_client_, dir); 
         if (new_r == -1) { 
-            RCLCPP_WARN(node->get_logger(), "Move failed"); return false; 
+            RCLCPP_WARN(main_node_->get_logger(), "Move failed"); return false; 
         } 
-        robot.r = new_r; robot.c = new_c; 
+        robot_.r = new_r; robot_.c = new_c; 
         return true;
     }
 
@@ -232,10 +236,10 @@ public:
         is_searching = false;
         for (int n = 0; n < int(path.size());) {
             bool success = false;
-            if (path[n].r == robot_.r - 1) {success = move_logic(main_node_, move_client_, robot_, known_map_, "up");}
-            else if (path[n].r == robot_.r + 1) {success = move_logic(main_node_, move_client_, robot_, known_map_, "down");}
-            else if (path[n].c == robot_.c - 1) {success = move_logic(main_node_, move_client_, robot_, known_map_, "left");}
-            else if (path[n].c == robot_.c + 1) {success = move_logic(main_node_, move_client_, robot_, known_map_, "right");}
+            if      (path[n].r == robot_.r - 1) {success = move_logic("up");}
+            else if (path[n].r == robot_.r + 1) {success = move_logic("down");}
+            else if (path[n].c == robot_.c - 1) {success = move_logic("left");}
+            else if (path[n].c == robot_.c + 1) {success = move_logic("right");}
             else if (path[n] == robot_) {success = true;}
             else {
                 std::cout << "Caminho inválido";
@@ -244,7 +248,9 @@ public:
             if (success) {
                 ++n;
             }
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
         }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
         is_searching = true;
         return true;
     }
@@ -252,58 +258,77 @@ public:
 private:
     void callback(const cg_interfaces::msg::RobotSensors &msg)
     {
+        last_msg = msg;
+        received_first_msg = true;
+    }
+
+    /* Função usada para finalizar a função do main loop sem quebrar tudo.
+    Por estar em um thread separado, é importante finalizá-a de forma apropriada
+    para que não tente acessar variáveis do controller após ele ser apagado*/
+    void finish_main() {
+        is_searching = false;
+        finished = true;
+        std::cout << "E no fim das contas, o verdadeiro fim do labirinto eram os amigos que fizemos pelo caminho.";
+        if (!follow_path(BFS(known_map_, robot_, Position{1, 1}))) {
+            // Se falhar o pathfinding ele morre.
+            rclcpp::shutdown(); 
+            return;
+        };
+
+        target = find_target(known_map_);
+
+        auto shortest_path = BFS(known_map_, robot_, target);
+        for (int i = 0; i < int(shortest_path.size()); i++) {
+            std::cout << "\n STEP ";
+            std::cout << i;
+            std::cout << ": ";
+            std::cout << shortest_path[i].r;
+            std::cout << ", ";
+            std::cout << shortest_path[i].c;
+        }
+
+        follow_path(shortest_path);
+
+        rclcpp::shutdown(); 
+        return;
+    }
+
+    void main_loop() {
         // Lógica principal!!! Usando DFS iterativo para explorar o mapa
         // 1. Atualizar mapa com nova mensagem
         // 2. Atualizar o stack DFS com as novas informações
         // 3. Se o stack estiver vazio, interromper exploração
         // 4. Mover o robô até a posição no topo do stack
-        if (is_searching && !finished) {
-            update_map(msg, robot_, known_map_);
-            update_DFS(robot_, known_map_);
-            if (DFS_stack.empty()) {
-                is_searching = false;
-                finished = true;
-                std::cout << "E no fim das contas, o verdadeiro fim do labirinto eram os amigos que fizemos pelo caminho.";
-                if (!follow_path(BFS(known_map_, robot_, Position{r:1, c:1}))) {
-                    // Se falhar o pathfinding ele morre.
-                    rclcpp::shutdown(); 
-                    return;
-                };
-
-                target = find_target(known_map_);
-
-                auto shortest_path = BFS(known_map_, robot_, target);
-                for (int i = 0; i < int(shortest_path.size()); i++) {
-                    std::cout << "\n STEP ";
-                    std::cout << i;
-                    std::cout << ": ";
-                    std::cout << shortest_path[i].r;
-                    std::cout << ", ";
-                    std::cout << shortest_path[i].c;
-                }
-
-                follow_path(shortest_path);
-
-                rclcpp::shutdown(); 
-                return;
+        while (!finished) {
+            if (!is_searching || !received_first_msg) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                continue;
             }
-            Position next = DFS_stack.top();
+
+            update_map();
+            update_DFS();
+
+            if (movement_stack.empty()) {
+                finish_main();
+                return;
+            };
+
+            Position next = movement_stack.top();
 
             bool success = false;
-            if (next.r == robot_.r - 1) {success = move_logic(main_node_, move_client_, robot_, known_map_, "up");}
-            else if (next.r == robot_.r + 1) {success = move_logic(main_node_, move_client_, robot_, known_map_, "down");}
-            else if (next.c == robot_.c - 1) {success = move_logic(main_node_, move_client_, robot_, known_map_, "left");}
-            else if (next.c == robot_.c + 1) {success = move_logic(main_node_, move_client_, robot_, known_map_, "right");}
+            if      (next.r == robot_.r - 1 && next.c == robot_.c    ) success = move_logic("up"   );
+            else if (next.r == robot_.r + 1 && next.c == robot_.c    ) success = move_logic("down" );
+            else if (next.r == robot_.r     && next.c == robot_.c - 1) success = move_logic("left" );
+            else if (next.r == robot_.r     && next.c == robot_.c + 1) success = move_logic("right");
+            else if (next == robot_) success = true;
             else {
-                if (follow_path(BFS(known_map_, robot_, next))) {
-                    success = true;
-                } else {
-                    // Se falhar o pathfinding ele morre.
-                    rclcpp::shutdown(); 
+                if (!follow_path(BFS(known_map_, robot_, next))) {
+                    finish_main(); 
                     return;
                 }
             }
-            if (success) DFS_stack.pop();
+            if (success) movement_stack.pop();
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
     }
 
@@ -380,9 +405,6 @@ int main(int argc, char **argv)
     Position robot;
     robot.r = 1;
     robot.c = 1;
-
-    std::queue<Position> stack;
-    stack.push(robot);
 
     // Instancia o controlador do robô
     auto controller = std::make_shared<RobotController>(
