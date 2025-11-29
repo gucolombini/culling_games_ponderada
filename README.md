@@ -1,7 +1,7 @@
 # Instruções de Execução
-No repositório [culling_games](https://github.com/rmnicola/culling_games), dentro da pasta /src crie uma pasta chamada "map_solver". Copie e cole os conteúdos desse repositório dentro da pasta, e depois da raiz do repositório execute:
+No repositório [culling_games](https://github.com/rmnicola/culling_games) (compatível com última versão testada: 28/11/2025), dentro da pasta /src crie uma pasta chamada "map_solver". Copie e cole os conteúdos desse repositório dentro da pasta, e depois da raiz do repositório execute:
 ```bash
-colcon build --packages-select map_solver
+colcon build
 ```
 
 Após o processo finalizar com sucesso, inicie o labirinto e em outro terminal execute os seguintes comandos para iniciar os algoritmos de resolvimento do mapa (Uma conexão estável é necessária para garantir a execução do programa sem erros!):
