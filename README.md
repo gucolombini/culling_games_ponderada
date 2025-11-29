@@ -1,9 +1,13 @@
 # Culling Games Map Solver
+
 Uma aplicação que resolve mapas gerados proceduralmente de forma completamente autônoma! É capaz de encontrar o menor caminho possível entre a posição inicial do robô e o alvo ao receber informação do mapa completo ou por meio de SLAM, com lógica de exploração e mapeamento por meio de Busca por Largura e Busca por Profundidade implementadas. O código, em C++, consiste na criação de um cliente capaz de se comunicar com as informações enviadas pela aplicação original por meio de tópicos e serviços ROS2, interpretando-as e se comunicando de volta com essa aplicação para fazer com que o robô se mova pelo mapa.
+
+<img src='demo.gif'>
 
 ## [Vídeo de Demonstração Básica](https://drive.google.com/file/d/1BOMwQRBev4gHPaTdQctQSUhxAjYp3A40/view?usp=sharing)
 
 # Instruções de Execução
+
 No repositório [culling_games](https://github.com/rmnicola/culling_games) (compatível com última versão testada: 28/11/2025), dentro da pasta /src crie uma pasta chamada "map_solver". Copie e cole os conteúdos desse repositório dentro da pasta, e depois da raiz do repositório execute:
 ```bash
 colcon build
